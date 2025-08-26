@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Project specific
+*.png
+*.jpg
+*.jpeg
+test_screenshot.png
+test_mumu12.png
+
+# Archives
+*.tar.gz
+*.zip
+*.rar
+
+# Config (may contain sensitive data)
+# config.yaml  # Keep config.yaml in repo for reference
+
+# Temp files
+*.tmp
+.temp/

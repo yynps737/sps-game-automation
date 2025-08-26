@@ -1,0 +1,28 @@
+# 游戏自动化配置
+
+# 设备配置
+device:
+  id: "127.0.0.1:16384"  # MuMu12模拟器默认端口
+  # id: "127.0.0.1:7555"   # MuMu12备用端口
+  # id: "127.0.0.1:5555"   # 雷电模拟器
+  # id: "127.0.0.1:62001"  # 夜神模拟器
+  # id: "ABCD1234"  # 真机序列号
+
+# 游戏配置
+game:
+  name: "杖剑传说"
+  package: "com.sstudio.zjcs"
+  
+# 性能配置
+performance:
+  screenshot_quality: 80  # 截图质量(1-100)
+  operation_delay: 0.5   # 操作间隔(秒)
+  
+# 任务配置
+tasks:
+  daily_energy:
+    enabled: true
+    schedule: "12:00,18:00,21:00"
+  daily_dungeon:
+    enabled: true
+    max_runs: 10

@@ -1,0 +1,50 @@
+# SPS Game Automation Framework - Production Dependencies
+# Python 3.11.8+ Required (3.11.8 or 3.11.9 recommended)
+# Generated: 2024
+
+# ============== Core Framework ==============
+PyQt6==6.6.1                    # GUI framework, stable version with Python 3.11 support
+opencv-python==4.9.0.80         # Computer vision, optimal performance
+numpy==1.26.4                   # Numerical computing, DO NOT upgrade to 2.0
+Pillow==10.2.0                  # Image processing, WebP support
+PyYAML==6.0.1                   # Configuration files, Cython accelerated
+
+# ============== Communication & Control ==============
+adbutils==2.1.1                 # Android Debug Bridge interface
+websocket-client==1.7.0         # WebSocket communication
+pyserial==3.5                   # Serial port communication (optional)
+
+# ============== OCR Support ==============
+paddlepaddle==2.5.2             # PaddlePaddle framework
+paddleocr==2.7.3                # Chinese OCR engine
+
+# ============== Performance Optimization ==============
+Cython==3.0.8                   # C-extensions for Python
+pybind11==2.11.1                # Seamless C++ integration
+numba==0.59.0                   # JIT compiler for numerical functions
+
+# ============== Utility Libraries ==============
+loguru==0.7.2                   # Advanced logging with rotation
+tenacity==8.2.3                 # Retry mechanism with exponential backoff
+apscheduler==3.10.4             # Advanced task scheduling
+watchdog==4.0.0                 # File system monitoring
+typing-extensions==4.9.0        # Backported typing features
+
+# ============== Data Processing ==============
+scipy==1.12.0                   # Scientific computing
+scikit-image==0.22.0            # Advanced image processing algorithms
+pandas==2.2.0                   # Data analysis (for logs/stats)
+
+# ============== Async Support ==============
+asyncio==3.4.3                  # Async I/O support
+aiofiles==23.2.1                # Async file operations
+aiohttp==3.9.3                  # Async HTTP client/server
+
+# ============== Configuration & Validation ==============
+pydantic==2.5.3                 # Data validation using Python type annotations
+python-dotenv==1.0.1            # .env file support
+jsonschema==4.21.1              # JSON schema validation
+
+# ============== Encryption & Security ==============
+cryptography==42.0.2            # Cryptographic recipes
+pyotp==2.9.0                    # One-time password library
