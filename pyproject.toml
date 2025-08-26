@@ -1,0 +1,32 @@
+[project]
+name = "sps-game-automation"
+version = "0.1.0"
+description = "Minimal game automation framework for 杖剑传说"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python==4.9.0.80",
+    "numpy==1.26.4", 
+    "PyYAML==6.0.1",
+    "loguru==0.7.2",
+    "Pillow==10.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+]
+
+[project.scripts]
+sps-game = "main:main"
+test-connection = "test_connection:test_mumu12_connection"
+quick-start = "quick_start:quick_test"
+
+[tool.uv]
+dev-dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

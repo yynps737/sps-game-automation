@@ -1,9 +1,10 @@
 """
-ADB驱动 - 简化版，直接使用subprocess调用adb命令
+ADB驱动 - 自动查找ADB路径版本
 """
 
 import subprocess
 import time
+import os
 from typing import Optional, Tuple
 from loguru import logger
 
@@ -11,11 +12,37 @@ from core import Result
 
 
 class ADBDriver:
-    """简化的ADB驱动"""
+    """简化的ADB驱动 - 自动查找ADB"""
     
     def __init__(self):
         self.device_id = None
         self.connected = False
+        self.adb_cmd = self._find_adb()
+    
+    def _find_adb(self) -> str:
+        """查找ADB命令"""
+        # 可能的ADB位置
+        adb_paths = [
+            r"D:\tools\platform-tools\adb.exe",
+            r"C:\platform-tools\adb.exe", 
+            r"C:\Android\sdk\platform-tools\adb.exe",
+            r"C:\Program Files\Netease\MuMuPlayer-12.0\shell\adb.exe",
+            r"C:\Program Files\MuMu\emulator\nemu12\shell\adb.exe",
+        ]
+        
+        # 检查环境变量中的ADB_PATH
+        if os.environ.get('ADB_PATH'):
+            adb_paths.insert(0, os.environ['ADB_PATH'])
+        
+        # 查找存在的ADB
+        for path in adb_paths:
+            if os.path.exists(path):
+                logger.info(f"Found ADB at: {path}")
+                return f'"{path}"'  # 加引号处理路径中的空格
+        
+        # 如果都没找到，假设在PATH中
+        logger.warning("ADB not found in common locations, trying PATH...")
+        return "adb"
     
     def connect(self, device_id: Optional[str] = None) -> Result[bool]:
         """
@@ -42,7 +69,7 @@ class ADBDriver:
         
         try:
             # 先尝试连接
-            cmd = f"adb connect {device_id}"
+            cmd = f"{self.adb_cmd} connect {device_id}"
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
             
             if "connected" in result.stdout or "already connected" in result.stdout:
@@ -61,8 +88,6 @@ class ADBDriver:
                 # 如果是MuMu12，尝试启动ADB
                 if "16384" in device_id or "7555" in device_id:
                     logger.info("Trying to start MuMu12 ADB service...")
-                    # MuMu12的adb通常在: C:\Program Files\Netease\MuMuPlayer-12.0\shell\adb.exe
-                    # 但我们使用系统的adb即可
                     
                     # 重试连接
                     time.sleep(2)
@@ -77,6 +102,8 @@ class ADBDriver:
                 
         except subprocess.TimeoutExpired:
             return Result.fail("Connection timeout")
+        except FileNotFoundError:
+            return Result.fail(f"ADB not found. Please install ADB or check path: {self.adb_cmd}")
         except Exception as e:
             return Result.fail(f"Connection error: {e}")
     
@@ -86,7 +113,7 @@ class ADBDriver:
             return Result.ok(True)
         
         try:
-            cmd = f"adb disconnect {self.device_id}"
+            cmd = f"{self.adb_cmd} disconnect {self.device_id}"
             subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
             self.connected = False
             logger.info(f"Disconnected from {self.device_id}")
@@ -109,7 +136,7 @@ class ADBDriver:
             return Result.fail("Device not connected")
         
         try:
-            cmd = f"adb -s {self.device_id} shell {command}"
+            cmd = f"{self.adb_cmd} -s {self.device_id} shell {command}"
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
             
             if result.returncode != 0:
@@ -134,7 +161,7 @@ class ADBDriver:
         
         try:
             # 方案1：使用screencap（更兼容）
-            cmd = f"adb -s {self.device_id} exec-out screencap -p"
+            cmd = f"{self.adb_cmd} -s {self.device_id} exec-out screencap -p"
             result = subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
             
             if result.returncode != 0:
