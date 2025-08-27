@@ -1,24 +1,31 @@
 """
-ADB驱动 - 自动查找ADB路径版本
+ADB驱动 - 基于官方文档的正确实现
 """
 
 import subprocess
 import time
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from loguru import logger
 
 from core import Result
 
 
 class ADBDriver:
-    """简化的ADB驱动 - 自动查找ADB"""
+    """
+    ADB驱动 - 正确处理MuMu12和标准Android模拟器
+    
+    基于官方文档：
+    - emulator-XXXX格式是标准Android模拟器串行号
+    - MuMu12使用端口16384，但显示为emulator-5554保持兼容性
+    - 端口递增规律：MuMu12多开时每个实例+32
+    """
     
     def __init__(self):
         self.device_id = None
         self.connected = False
         self.adb_cmd = self._find_adb()
-    
+        
     def _find_adb(self) -> str:
         """查找ADB命令"""
         # 可能的ADB位置
@@ -44,66 +51,198 @@ class ADBDriver:
         logger.warning("ADB not found in common locations, trying PATH...")
         return "adb"
     
+    def list_devices(self) -> Result[List[str]]:
+        """
+        列出所有连接的设备
+        
+        Returns:
+            Result[List[str]]: 设备ID列表
+        """
+        try:
+            cmd = f"{self.adb_cmd} devices"
+            result = subprocess.run(
+                cmd, 
+                shell=True, 
+                capture_output=True, 
+                encoding='utf-8', 
+                errors='ignore', 
+                timeout=5
+            )
+            
+            # 解析输出
+            lines = result.stdout.strip().split('\n')
+            devices = []
+            for line in lines[1:]:  # 跳过标题行
+                if '\t' in line:
+                    device_id, status = line.split('\t')
+                    if status == 'device':
+                        devices.append(device_id)
+            
+            return Result.ok(devices)
+            
+        except Exception as e:
+            return Result.fail(f"Failed to list devices: {e}")
+    
     def connect(self, device_id: Optional[str] = None) -> Result[bool]:
         """
-        连接设备
+        连接设备 - 智能处理不同场景
         
-        MuMu12模拟器：
-          - 默认端口: 127.0.0.1:16384
-          - 备用端口: 127.0.0.1:7555
-          
-        其他模拟器：
-          - 雷电: 127.0.0.1:5555
-          - 夜神: 127.0.0.1:62001
-          - 逍遥: 127.0.0.1:21503
+        处理逻辑：
+        1. 如果未指定device_id，自动检测可用设备
+        2. 如果指定了emulator-XXXX格式，直接使用（已连接）
+        3. 如果指定了IP:端口格式，执行adb connect
+        4. 自动尝试MuMu12常用端口
         
         Args:
-            device_id: 设备ID，如 "127.0.0.1:16384"
+            device_id: 设备ID（可选）
             
         Returns:
             Result[bool]: 连接结果
         """
-        # MuMu12默认端口
-        if device_id is None:
-            device_id = "127.0.0.1:16384"
-        
         try:
-            # 先尝试连接
-            cmd = f"{self.adb_cmd} connect {device_id}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+            # 首先列出当前设备
+            devices_result = self.list_devices()
+            if devices_result.is_ok():
+                current_devices = devices_result.unwrap()
+                logger.info(f"Current devices: {current_devices}")
+            else:
+                current_devices = []
             
-            if "connected" in result.stdout or "already connected" in result.stdout:
+            # 场景1：未指定设备ID，自动检测
+            if device_id is None:
+                # 优先使用已连接的设备
+                if current_devices:
+                    device_id = current_devices[0]
+                    logger.info(f"Using existing device: {device_id}")
+                    self.device_id = device_id
+                    self.connected = True
+                    
+                    # 验证设备响应
+                    test_result = self.shell("echo test")
+                    if test_result.is_ok():
+                        return Result.ok(True)
+                    else:
+                        self.connected = False
+                        logger.warning(f"Device {device_id} not responding, trying to connect MuMu12...")
+                
+                # 尝试连接MuMu12的常用端口
+                logger.info("No connected device, trying MuMu12 ports...")
+                for port in [16384, 16416, 7555, 5555]:
+                    target = f"127.0.0.1:{port}"
+                    logger.info(f"Trying to connect: {target}")
+                    
+                    cmd = f"{self.adb_cmd} connect {target}"
+                    result = subprocess.run(
+                        cmd, 
+                        shell=True, 
+                        capture_output=True, 
+                        encoding='utf-8', 
+                        errors='ignore', 
+                        timeout=3
+                    )
+                    
+                    if "connected" in result.stdout.lower() and "cannot" not in result.stdout.lower():
+                        # 连接成功后，获取实际的设备ID
+                        time.sleep(0.5)  # 等待连接稳定
+                        devices_after = self.list_devices()
+                        if devices_after.is_ok():
+                            new_devices = devices_after.unwrap()
+                            if new_devices:
+                                # 使用新出现的设备ID（可能是emulator-5554格式）
+                                self.device_id = new_devices[0]
+                                self.connected = True
+                                logger.info(f"Connected to MuMu12, device ID: {self.device_id}")
+                                return Result.ok(True)
+                
+                return Result.fail("Could not find or connect to any device")
+            
+            # 场景2：指定了emulator-XXXX格式（已连接的设备）
+            if "emulator-" in device_id and ":" not in device_id:
+                if device_id in current_devices:
+                    logger.info(f"Device {device_id} is already connected")
+                    self.device_id = device_id
+                    self.connected = True
+                    
+                    # 验证设备响应
+                    test_result = self.shell("echo test")
+                    if test_result.is_ok():
+                        return Result.ok(True)
+                    else:
+                        self.connected = False
+                        return Result.fail(f"Device {device_id} not responding")
+                else:
+                    # 设备不在列表中，可能需要先连接MuMu12
+                    logger.warning(f"Device {device_id} not found, trying to connect MuMu12...")
+                    # 尝试连接MuMu12端口
+                    for port in [16384, 16416, 7555, 5555]:
+                        target = f"127.0.0.1:{port}"
+                        cmd = f"{self.adb_cmd} connect {target}"
+                        result = subprocess.run(
+                            cmd, 
+                            shell=True, 
+                            capture_output=True, 
+                            encoding='utf-8', 
+                            errors='ignore', 
+                            timeout=3
+                        )
+                        
+                        if "connected" in result.stdout.lower():
+                            time.sleep(0.5)
+                            # 再次检查设备列表
+                            devices_after = self.list_devices()
+                            if devices_after.is_ok() and device_id in devices_after.unwrap():
+                                self.device_id = device_id
+                                self.connected = True
+                                logger.info(f"Successfully connected to {device_id}")
+                                return Result.ok(True)
+                    
+                    return Result.fail(f"Could not connect to device {device_id}")
+            
+            # 场景3：指定了IP:端口格式
+            if ":" in device_id:
+                logger.info(f"Connecting to {device_id}...")
+                cmd = f"{self.adb_cmd} connect {device_id}"
+                result = subprocess.run(
+                    cmd, 
+                    shell=True, 
+                    capture_output=True, 
+                    encoding='utf-8', 
+                    errors='ignore', 
+                    timeout=5
+                )
+                
+                if "connected" in result.stdout.lower() or "already connected" in result.stdout.lower():
+                    # 获取连接后的实际设备ID
+                    time.sleep(0.5)
+                    devices_after = self.list_devices()
+                    if devices_after.is_ok():
+                        new_devices = devices_after.unwrap()
+                        if new_devices:
+                            # 使用设备列表中的ID（可能是emulator格式）
+                            self.device_id = new_devices[0] if len(new_devices) == 1 else device_id
+                            self.connected = True
+                            logger.info(f"Connected successfully, using device ID: {self.device_id}")
+                            
+                            # 验证连接
+                            test_result = self.shell("echo test")
+                            if test_result.is_ok():
+                                return Result.ok(True)
+                
+                return Result.fail(f"Failed to connect to {device_id}: {result.stdout}")
+            
+            # 场景4：其他设备序列号
+            if device_id in current_devices:
                 self.device_id = device_id
                 self.connected = True
-                logger.info(f"Connected to device: {device_id}")
-                
-                # 验证连接
-                devices_result = self.shell("echo test")
-                if devices_result.is_fail():
-                    self.connected = False
-                    return Result.fail("Device connected but not responding")
-                
+                logger.info(f"Using existing device: {device_id}")
                 return Result.ok(True)
             else:
-                # 如果是MuMu12，尝试启动ADB
-                if "16384" in device_id or "7555" in device_id:
-                    logger.info("Trying to start MuMu12 ADB service...")
-                    
-                    # 重试连接
-                    time.sleep(2)
-                    retry_result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
-                    if "connected" in retry_result.stdout:
-                        self.device_id = device_id
-                        self.connected = True
-                        logger.info(f"Connected to MuMu12: {device_id}")
-                        return Result.ok(True)
-                
-                return Result.fail(f"Failed to connect: {result.stdout}")
+                return Result.fail(f"Unknown device: {device_id}")
                 
         except subprocess.TimeoutExpired:
             return Result.fail("Connection timeout")
         except FileNotFoundError:
-            return Result.fail(f"ADB not found. Please install ADB or check path: {self.adb_cmd}")
+            return Result.fail(f"ADB not found. Please install ADB or set ADB_PATH environment variable")
         except Exception as e:
             return Result.fail(f"Connection error: {e}")
     
@@ -113,10 +252,14 @@ class ADBDriver:
             return Result.ok(True)
         
         try:
-            cmd = f"{self.adb_cmd} disconnect {self.device_id}"
-            subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
+            # 只有IP:端口格式需要disconnect
+            if self.device_id and ":" in self.device_id:
+                cmd = f"{self.adb_cmd} disconnect {self.device_id}"
+                subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
+            
             self.connected = False
-            logger.info(f"Disconnected from {self.device_id}")
+            self.device_id = None
+            logger.info("Disconnected")
             return Result.ok(True)
         except Exception as e:
             return Result.fail(f"Disconnect error: {e}")
@@ -132,14 +275,22 @@ class ADBDriver:
         Returns:
             Result[str]: 命令输出
         """
-        if not self.connected:
+        if not self.connected or not self.device_id:
             return Result.fail("Device not connected")
         
         try:
             cmd = f"{self.adb_cmd} -s {self.device_id} shell {command}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(
+                cmd, 
+                shell=True, 
+                capture_output=True, 
+                encoding='utf-8', 
+                errors='ignore', 
+                timeout=timeout
+            )
             
-            if result.returncode != 0:
+            # 某些命令返回非0也是正常的
+            if result.returncode != 0 and result.stderr and "error" in result.stderr.lower():
                 return Result.fail(f"Command failed: {result.stderr}")
             
             return Result.ok(result.stdout.strip())
@@ -156,13 +307,18 @@ class ADBDriver:
         Returns:
             Result[bytes]: PNG图片数据
         """
-        if not self.connected:
+        if not self.connected or not self.device_id:
             return Result.fail("Device not connected")
         
         try:
-            # 方案1：使用screencap（更兼容）
+            # 使用screencap（更兼容）
             cmd = f"{self.adb_cmd} -s {self.device_id} exec-out screencap -p"
-            result = subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
+            result = subprocess.run(
+                cmd, 
+                shell=True, 
+                capture_output=True, 
+                timeout=10  # 增加超时时间
+            )
             
             if result.returncode != 0:
                 return Result.fail("Screenshot failed")
@@ -207,7 +363,10 @@ class ADBDriver:
         """检查屏幕是否亮着"""
         result = self.shell("dumpsys power | grep 'Display Power'")
         if result.is_fail():
-            return Result.fail("Failed to check screen state")
+            # 尝试另一种方法
+            result = self.shell("dumpsys power | grep mScreenOn")
+            if result.is_fail():
+                return Result.fail("Failed to check screen state")
         
         output = result.unwrap()
-        return Result.ok("ON" in output or "state=ON" in output)
+        return Result.ok("ON" in output.upper() or "true" in output.lower())

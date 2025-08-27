@@ -33,9 +33,15 @@ def main():
         logger.info("Game automation started")
         
         # 示例：截图
+        logger.info("Attempting to capture screenshot...")
         screen = game.screenshot()
         if screen is not None:
-            logger.info("Screenshot captured successfully")
+            logger.info(f"Screenshot captured successfully, size: {screen.shape}")
+            import cv2
+            cv2.imwrite("screenshot_test.png", screen)
+            logger.info("Screenshot saved as screenshot_test.png")
+        else:
+            logger.warning("Screenshot returned None")
         
         # 示例：点击坐标
         if game.tap(500, 500):
